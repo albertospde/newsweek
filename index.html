@@ -687,9 +687,9 @@ async function costruisciExcel(tipo = 'interni'){
   c1.font = font({ size: 26, bold: true, color: { argb: XL.navy } });
   c1.alignment = { vertical: 'middle' };
   ws.getRow(1).height = 40;
-  ws.mergeCells(`${lettera(colDi('autore'))}1:${ultima}1`);
+  ws.mergeCells(`${lettera(colDi('autore'))}1:${lettera(colDi('nota') - 1)}1`);
   const c1b = ws.getCell(`${lettera(colDi('autore'))}1`);
-  c1b.value = 'PDE · NOVITÀ IN USCITA';
+  c1b.value = 'NOVITÀ IN USCITA';
   c1b.font = font({ size: 10, bold: true, color: { argb: XL.blu } });
   c1b.alignment = { horizontal: 'right', vertical: 'middle' };
   ws.mergeCells(`B2:${ultima}2`);
@@ -697,6 +697,15 @@ async function costruisciExcel(tipo = 'interni'){
   c2.value = periodoVendita() || `Novità in uscita questa settimana`;
   c2.font = font({ size: 11, color: { argb: XL.grigio } });
   ws.getRow(2).height = 20;
+  // logo PDE originale in alto a destra (colonna NOTE, allineato a destra)
+  try {
+    const b = await (await fetch('logo-pde.png', { cache: 'force-cache' })).blob();
+    const b64 = await new Promise((ok, ko) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1]); fr.onerror = ko; fr.readAsDataURL(b); });
+    const logoId = wb.addImage({ base64: b64, extension: 'png' });
+    const larghNotePx = 34 * 7 + 5, logoW = 98, logoH = 56; // 300×171 in proporzione
+    const EMU = 9525; // EMU per pixel
+    ws.addImage(logoId, { tl: { nativeCol: colDi('nota') - 1, nativeColOff: (larghNotePx - logoW - 6) * EMU, nativeRow: 0, nativeRowOff: 6 * EMU }, ext: { width: logoW, height: logoH }, editAs: 'absolute' });
+  } catch (e) { console.warn('Logo PDE non inserito', e); }
   // linea sottile sotto l'intestazione
   for (let i = 2; i <= COLS.length + 1; i++) ws.getCell(3, i).border = { top: { style: 'medium', color: { argb: XL.navy } } };
   ws.getRow(3).height = 8;
