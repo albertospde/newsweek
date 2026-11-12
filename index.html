@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDE Newsweek</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://albertospde.github.io/pde-hub/assets/pde-app-logo.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<style>
+/* Tema scuro di default (come il Hub), chiaro con data-theme="light" */
+:root{
+  color-scheme:dark;
+  --bg:#0d1334; --card:#141c45; --card-2:#1a2352; --ink:#e6e9f5; --muted:#8c93b8; --border:rgba(255,255,255,.12);
+  --accent:#4f7be0; --accent-ink:#fff; --mar:#e0603f; --ven:#29a9e1; --ok:#4caf50; --warn:#d4a537; --danger:#ff8a80;
+  --head:#070b22; --input:#0f1640;
+}
+:root[data-theme="light"]{
+  color-scheme:light;
+  --bg:#f4f6fb; --card:#fff; --card-2:#eef1f8; --ink:#141a33; --muted:#5a6388; --border:#d6dbe8;
+  --accent:#1f6fe5; --accent-ink:#fff; --mar:#c8452a; --ven:#1a86b8; --ok:#2e7d32; --warn:#9a6b00; --danger:#c43d3d;
+  --head:#0f1c4d; --input:#fff;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:13px;min-height:100vh;}
+button{font-family:inherit;}
+input,textarea,select{font-family:inherit;color:var(--ink);background:var(--input);border:1px solid var(--border);border-radius:6px;}
+input:focus,textarea:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px;}
+
+header{background:var(--head);padding:12px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;border-bottom:3px solid var(--accent);}
+.logo-wrap{background:#fff;border-radius:8px;padding:5px 10px;display:inline-flex;}
+header .sub{flex:1;color:#9aa0b8;font-size:11px;font-family:'DM Mono',monospace;text-align:center;min-width:120px;}
+.hbtn{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#ccd;padding:6px 12px;border-radius:5px;cursor:pointer;font-size:12px;}
+.hbtn:hover{background:rgba(255,255,255,.2);}
+.theme-switch{display:flex;gap:2px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:2px;}
+.theme-opt{background:transparent;border:none;border-radius:4px;color:#9aa0b8;font-size:12px;padding:4px 10px;cursor:pointer;}
+:root:not([data-theme="light"]) .theme-opt[data-set="dark"],:root[data-theme="light"] .theme-opt[data-set="light"]{color:#fff;background:rgba(255,255,255,.16);}
+
+main{max-width:1500px;margin:0 auto;padding:20px 24px 60px;display:flex;flex-direction:column;gap:16px;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px;}
+.card h2{font-family:Montserrat,sans-serif;font-size:14px;margin-bottom:10px;letter-spacing:.02em;}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;}
+.field{display:flex;flex-direction:column;gap:4px;}
+.field label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
+.field input,.field select{padding:7px 9px;font-size:13px;min-width:120px;}
+.btn{padding:8px 14px;border-radius:6px;border:1px solid var(--border);background:var(--card-2);color:var(--ink);cursor:pointer;font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
+.btn:hover:not(:disabled){border-color:var(--accent);}
+.btn:disabled{opacity:.45;cursor:not-allowed;}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);}
+.status{font-size:12px;color:var(--muted);margin-top:10px;min-height:16px;}
+.status.err{color:var(--danger);}
+
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;}
+.kpi .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
+.kpi .num{font-family:'DM Mono',monospace;font-size:22px;font-weight:500;margin-top:4px;}
+.kpi .det{font-size:11px;color:var(--muted);margin-top:2px;}
+.kpi.mar{border-left:4px solid var(--mar);} .kpi.ven{border-left:4px solid var(--ven);}
+
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}
+.chip{padding:5px 12px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-size:12px;}
+.chip.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+.spacer{flex:1;}
+.progress{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;}
+
+.tbl-wrap{overflow-x:auto;}
+table{width:100%;border-collapse:collapse;font-size:12.5px;}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:8px 6px;border-bottom:1px solid var(--border);white-space:nowrap;}
+td{padding:6px;border-bottom:1px solid var(--border);vertical-align:middle;}
+td.num,th.num{text-align:right;font-family:'DM Mono',monospace;white-space:nowrap;}
+td.mono{font-family:'DM Mono',monospace;font-size:11.5px;}
+.cov{width:46px;height:64px;border-radius:3px;background:var(--card-2);display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;color:var(--muted);font-size:10px;text-align:center;border:1px dashed var(--border);}
+.cov img{width:100%;height:100%;object-fit:cover;display:block;}
+.cov.ok{border:none;}
+.tit{font-weight:600;}
+.sm{font-size:11px;color:var(--muted);}
+.day{font-size:12px;padding:4px 6px;border-radius:5px;font-weight:600;}
+.day.martedì{color:var(--mar);border-color:var(--mar);} .day.venerdì{color:var(--ven);border-color:var(--ven);}
+.forced{font-size:10px;color:var(--warn);display:block;margin-top:2px;}
+td textarea.nota{width:100%;min-width:180px;min-height:44px;padding:5px 7px;font-size:12px;resize:vertical;}
+.sez{font-family:Montserrat,sans-serif;font-weight:700;font-size:13px;padding:12px 6px 6px;color:var(--warn);}
+textarea#noteGenerali{width:100%;min-height:90px;padding:10px;font-size:13px;resize:vertical;}
+.ean-add{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+.ean-add textarea{flex:1;min-width:240px;min-height:38px;padding:7px;font-family:'DM Mono',monospace;font-size:12px;}
+.xbtn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;}
+.xbtn:hover{color:var(--danger);}
+.hidden{display:none !important;}
+
+.login{position:fixed;inset:0;background:linear-gradient(135deg,#0b1128,#1a2d6b);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px;}
+.login-box{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:32px;width:100%;max-width:360px;text-align:center;}
+.login-box .logo-wrap{margin-bottom:22px;}
+.login-box input{width:100%;padding:11px 13px;margin-bottom:12px;background:rgba(255,255,255,.95);color:#1a2d6b;border:none;}
+.login-box .btn{width:100%;justify-content:center;padding:12px;}
+.login-err{color:#ff8a80;font-size:12px;min-height:16px;margin-bottom:8px;}
+
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:40;padding:16px;}
+.modal{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;width:100%;max-width:440px;}
+.modal h3{font-size:14px;margin-bottom:10px;}
+.modal input{width:100%;padding:8px;margin:8px 0;}
+.modal .row{justify-content:flex-end;margin-top:8px;}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--head);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;z-index:60;max-width:90vw;box-shadow:0 6px 20px rgba(0,0,0,.35);}
+.toast.err{background:#8b1e1e;}
+@media (max-width:700px){ main{padding:16px;} header{padding:10px 16px;} }
+</style>
+<script>
+// Tema condiviso con il Hub e le altre app PDE (stessa chiave localStorage)
+(function(){
+  function applica(t){ if(t==='light') document.documentElement.setAttribute('data-theme','light'); else document.documentElement.removeAttribute('data-theme'); }
+  try{ applica(localStorage.getItem('pde-hub-theme')); }catch(e){}
+  window.setTheme=function(t){ applica(t); try{ localStorage.setItem('pde-hub-theme',t); }catch(e){} };
+  window.addEventListener('storage',function(e){ if(e.key==='pde-hub-theme') applica(e.newValue); });
+})();
+</script>
+</head>
+<body>
+
+<div class="login" id="loginScreen">
+  <div class="login-box">
+    <div class="logo-wrap"><div class="pde-logo" role="img" aria-label="PDE Newsweek" style="font-size:20px"><div class="pl-text"><div class="pl-name"><b>PDE</b><span>NEWSWEEK</span></div><div class="pl-tag"><i class="c0">LANCIO.</i><em>I</em><i class="c1">COPERTINE.</i><em>I</em><i class="c2">VALORE.</i></div></div><div class="pl-wing"></div></div></div>
+    <input type="email" id="loginEmail" placeholder="nome@pde.it" autocomplete="username">
+    <input type="password" id="loginPassword" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    <div class="login-err" id="loginError"></div>
+    <button class="btn btn-primary" onclick="doLogin()">Accedi</button>
+  </div>
+</div>
+
+<header>
+  <div class="logo-wrap"><div class="pde-logo" role="img" aria-label="PDE Newsweek" style="font-size:12px"><div class="pl-text"><div class="pl-name"><b>PDE</b><span>NEWSWEEK</span></div><div class="pl-tag"><i class="c0">LANCIO.</i><em>I</em><i class="c1">COPERTINE.</i><em>I</em><i class="c2">VALORE.</i></div></div><div class="pl-wing"></div></div></div>
+  <span class="sub">Novità in uscita nella settimana · calendario lanci BookUp</span>
+  <div class="theme-switch" role="group" aria-label="Tema">
+    <button class="theme-opt" data-set="light" onclick="setTheme('light')">☀ Chiaro</button>
+    <button class="theme-opt" data-set="dark" onclick="setTheme('dark')">☾ Scuro</button>
+  </div>
+  <button class="hbtn" onclick="doLogout()">⏏ Esci</button>
+</header>
+
+<main>
+  <section class="card">
+    <h2>📅 Settimana di messa in vendita</h2>
+    <div class="row">
+      <div class="field"><label for="selSettimana">Settimana (un giorno qualsiasi)</label><input type="date" id="selSettimana"></div>
+      <div class="field"><label for="selOffset" title="Settimane tra l'iscrizione al lancio (calendario BookUp) e la messa in vendita">Settimane dopo l'iscrizione</label><input type="number" id="selOffset" min="0" max="10" value="3" style="min-width:80px;width:80px"></div>
+      <div class="field"><label for="selLancio">Lancio</label><select id="selLancio"></select></div>
+      <button class="btn btn-primary" id="btnCarica" onclick="caricaLancio()">↻ Carica titoli</button>
+    </div>
+    <div class="status" id="statusLancio">Accedi per leggere il calendario lanci.</div>
+  </section>
+
+  <section class="kpis hidden" id="kpis"></section>
+
+  <section class="card hidden" id="cardTitoli">
+    <div class="toolbar">
+      <button class="chip active" data-f="tutti" onclick="setFiltro('tutti')">Tutti</button>
+      <button class="chip" data-f="martedì" onclick="setFiltro('martedì')">Martedì</button>
+      <button class="chip" data-f="venerdì" onclick="setFiltro('venerdì')">Venerdì</button>
+      <span class="progress" id="covProgress"></span>
+      <span class="spacer"></span>
+      <button class="btn" onclick="cercaCopertine(true)" title="Ricerca di nuovo le copertine non trovate">🖼 Ricerca copertine</button>
+      <button class="btn" id="btnExcel" onclick="scaricaExcel()">⬇ Excel</button>
+      <button class="btn btn-primary" id="btnMailInt" onclick="inoltraMail('interni')">✉ Inoltra mail interni</button>
+      <button class="btn btn-primary" id="btnMailExt" onclick="inoltraMail('esterni')">✉ Inoltra mail esterni</button>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>Cover</th><th>EAN</th><th>Titolo / Autore</th><th>Editore</th>
+          <th class="num">Prezzo</th><th class="num">Fornito</th><th class="num">Valore</th><th>Uscita</th><th style="min-width:200px">Note</th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="sez">NOVITÀ SBLOCCATE A RIFORNIMENTO</div>
+    <div class="sm">Titoli fuori lancio da segnalare nel file (senza quantità). Incolla uno o più EAN.</div>
+    <div class="ean-add">
+      <textarea id="eanRifornimento" placeholder="9788836661244&#10;9788836663767"></textarea>
+      <button class="btn" onclick="aggiungiRifornimento()">＋ Aggiungi</button>
+    </div>
+  </section>
+
+  <section class="card hidden" id="cardNote">
+    <h2>📝 Note</h2>
+    <textarea id="noteGenerali" placeholder="Note sul lancio della settimana (restano salvate su questo computer)…"></textarea>
+  </section>
+</main>
+
+<div class="modal-bg hidden" id="covModal">
+  <div class="modal">
+    <h3>Copertina di <span id="covModalEan"></span></h3>
+    <div class="sm">Incolla l'indirizzo di un'immagine (es. da lafeltrinelli.it: tasto destro sulla copertina → "Copia indirizzo immagine").</div>
+    <input type="url" id="covModalUrl" placeholder="https://…">
+    <div class="row">
+      <button class="btn" onclick="chiudiCovModal()">Annulla</button>
+      <button class="btn btn-primary" onclick="salvaCovModal()">Usa questa</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =====================================================================
+   CONFIG — stesso progetto Supabase di BookUp / Giro Manager / Hub
+   ===================================================================== */
+const SUPABASE_URL = 'https://tdflwenlylhctxssatax.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZmx3ZW5seWxoY3R4c3NhdGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMzgyNzYsImV4cCI6MjA5MTkxNDI3Nn0.l35qEL7LOvyYuI1McQlVqj4vbyTqmlevcmqWbTGYi2Q';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Mail
+const MAIL_INTERNI_TO = ['pde@pde.it', 'agenti@pde.it'];
+const MAIL_ESTERNI_TO = ['comunicazione@pde.it'];
+const MAIL_ESTERNI_BCC = ['CCN LANCIO COVER BOOKSHOP', 'cristina.resa@gmail.com'];
+const MAIL_CORPO_HTML = '<p>Buongiorno</p>'
+  + '<p>in allegato trovate le novità in uscita questa settimana legate al Lancio in oggetto.</p>'
+  + '<p>Saluti,</p><p>Rachele</p>';
+
+// Uscita: stessa regola di Giro Manager (prenotato totale ≥ 2000 copie → martedì, sotto → venerdì)
+const SOGLIA_USCITA_MARTEDI = 2000;
+const giornoDaSoglia = tot => tot >= SOGLIA_USCITA_MARTEDI ? 'martedì' : 'venerdì';
+
+const state = {
+  calendario: [],      // righe calendario_lanci
+  lancio: null,        // {numero, anno, data_iscrizione}
+  righe: [],           // titoli del lancio
+  rifornimento: [],    // titoli "novità sbloccate a rifornimento"
+  filtro: 'tutti',
+  cover: {},           // ean -> {url, source} | {url:null}
+  coverBlob: {},       // ean -> {base64, ext}
+  covRunId: 0,
+};
+
+/* ---------------------- Utilità ---------------------- */
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtEuro = n => Number(n || 0).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
+const fmtInt = n => Number(n || 0).toLocaleString('it-IT', { useGrouping: 'always' });
+function toast(msg, err = false, ms = 5000){
+  const t = document.createElement('div');
+  t.className = 'toast' + (err ? ' err' : '');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), ms);
+}
+function isoLocale(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function parseIso(s){ const [a,m,g] = String(s).slice(0,10).split('-').map(Number); return new Date(a, m-1, g); }
+function lunediDi(d){ const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
+function addGiorni(d, n){ const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+const fmtData = d => d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+const nomeLancio = l => `${String(l.numero).replace('.', ',')} - ${l.anno}`;
+function lsGet(k, def){ try{ const v = localStorage.getItem(k); return v == null ? def : JSON.parse(v); }catch(e){ return def; } }
+function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+const chiaveLancio = () => state.lancio ? `newsweek:${state.lancio.anno}:${state.lancio.numero}` : null;
+
+/* ---------------------- Login ---------------------- */
+async function doLogin(){
+  const email = $('loginEmail').value.trim(), password = $('loginPassword').value;
+  $('loginError').textContent = '';
+  if (!email || !password) { $('loginError').textContent = 'Inserisci email e password.'; return; }
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) { $('loginError').textContent = 'Credenziali non valide.'; return; }
+  await avvio();
+}
+async function doLogout(){ await sb.auth.signOut(); location.reload(); }
+
+async function avvio(){
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) return;
+  if ((session.user.user_metadata || {}).role === 'agente') {
+    document.body.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;"><div><div style="font-size:48px">🔒</div><h2>Accesso non autorizzato</h2><p style="margin:8px 0 20px;color:#8c93b8">Non hai i permessi per accedere a questa applicazione.</p><a href="https://albertospde.github.io/pde-hub/" style="color:#29a9e1">← Torna a PDE Hub</a></div></div>';
+    return;
+  }
+  $('loginScreen').classList.add('hidden');
+  await caricaCalendario();
+}
+
+/* ---------------------- Calendario lanci → lancio della settimana ---------------------- */
+// Il calendario BookUp (tabella calendario_lanci) ha la data di iscrizione/invio prenotazioni.
+// La messa in vendita cade N settimane dopo (default 3: lancio 46 iscritto il 21/10/2026 → in vendita dal 09/11/2026).
+function settimanaVendita(riga, offset){ return addGiorni(lunediDi(parseIso(riga.data_iscrizione)), 7 * offset); }
+
+async function caricaCalendario(){
+  const st = $('statusLancio');
+  st.className = 'status'; st.textContent = 'Leggo il calendario lanci…';
+  const { data, error } = await sb.from('calendario_lanci').select('numero_lancio,anno,data_iscrizione,note').order('data_iscrizione');
+  if (error) { st.className = 'status err'; st.textContent = 'Errore calendario lanci: ' + error.message; return; }
+  state.calendario = (data || []).map(r => ({ ...r, numero_lancio: Number(r.numero_lancio) }));
+  if (!state.calendario.length) { st.className = 'status err'; st.textContent = 'Nessun calendario lanci caricato in BookUp (Trasmissione lancio → Calendario lanci).'; return; }
+  aggiornaSelectLanci(true);
+}
+
+function aggiornaSelectLanci(autoCarica){
+  const offset = Math.max(0, Number($('selOffset').value) || 0);
+  const lun = lunediDi($('selSettimana').value ? parseIso($('selSettimana').value) : new Date());
+  const lunIso = isoLocale(lun);
+  const sel = $('selLancio');
+  let scelto = null;
+  sel.innerHTML = state.calendario.map((r, i) => {
+    const v = settimanaVendita(r, offset);
+    const match = isoLocale(v) === lunIso;
+    if (match && scelto == null) scelto = i;
+    return `<option value="${i}">${esc(nomeLancio({ numero: r.numero_lancio, anno: r.anno }))} — in vendita dal ${fmtData(v)}${match ? ' ✓' : ''}</option>`;
+  }).join('');
+  const st = $('statusLancio');
+  if (scelto != null) {
+    sel.value = String(scelto);
+    const r = state.calendario[scelto];
+    st.className = 'status';
+    st.textContent = `Settimana ${fmtData(lun)} – ${fmtData(addGiorni(lun, 6))}: lancio ${nomeLancio({ numero: r.numero_lancio, anno: r.anno })} (iscrizione ${fmtData(parseIso(r.data_iscrizione))}).`;
+    if (autoCarica) caricaLancio();
+  } else {
+    st.className = 'status err';
+    st.textContent = `Nessun lancio in vendita nella settimana del ${fmtData(lun)}: scegli il lancio a mano dalla tendina.`;
+    const futuri = state.calendario.map((r, i) => ({ i, v: settimanaVendita(r, offset) })).filter(x => x.v >= lun);
+    if (futuri.length) sel.value = String(futuri[0].i);
+  }
+}
+
+/* ---------------------- Titoli del lancio ---------------------- */
+async function selectTutto(builderFn){
+  const out = []; const passo = 1000;
+  for (let da = 0; ; da += passo) {
+    const { data, error } = await builderFn().range(da, da + passo - 1);
+    if (error) throw error;
+    out.push(...(data || []));
+    if (!data || data.length < passo) break;
+  }
+  return out;
+}
+
+async function caricaLancio(){
+  const r = state.calendario[Number($('selLancio').value)];
+  if (!r) return;
+  state.lancio = { numero: r.numero_lancio, anno: r.anno, data_iscrizione: r.data_iscrizione };
+  const st = $('statusLancio');
+  const btn = $('btnCarica'); btn.disabled = true;
+  st.className = 'status'; st.textContent = `Carico i titoli del lancio ${nomeLancio(state.lancio)}…`;
+  try {
+    // lanci_settimanali: num_lancio salvato ×10 (460 = lancio 46)
+    const numDb = Math.round(r.numero_lancio * 10);
+    const lanci = await selectTutto(() => sb.from('lanci_settimanali')
+      .select('ean,titolo,autore,editore,prezzo,prenotato_iscrizione,prenotato_trasmesso,giorno_uscita_override')
+      .eq('anno_lancio', r.anno).eq('num_lancio', numDb).order('ean'));
+    if (!lanci.length) {
+      st.className = 'status err';
+      st.textContent = `Il lancio ${nomeLancio(state.lancio)} non ha ancora titoli in Lanci settimanali (Giro Manager).`;
+      state.righe = []; render(); return;
+    }
+    const uscite = await uscitaFineGiro(lanci.map(x => x.ean));
+    const salvato = lsGet(chiaveLancio(), {});
+    state.righe = lanci.map(x => {
+      const fornito = Number(x.prenotato_trasmesso ?? x.prenotato_iscrizione ?? 0);
+      const prezzo = Number(x.prezzo || 0);
+      const fg = uscite[x.ean];
+      const calcolato = x.giorno_uscita_override || (fg ? fg.giorno : giornoDaSoglia(fornito));
+      return {
+        ean: x.ean, titolo: x.titolo || '', autore: x.autore || '', editore: x.editore || '', prezzo, fornito,
+        valore: prezzo * fornito, giornoCalcolato: calcolato,
+        origineGiorno: x.giorno_uscita_override ? 'scelta in Lanci settimanali' : fg && fg.forzato ? 'scelta in Fine Giro' : 'da soglia 2.000 copie',
+        giorno: (salvato.giorni || {})[x.ean] || calcolato,
+        nota: (salvato.note || {})[x.ean] || '',
+      };
+    }).sort((a, b) => b.fornito - a.fornito || b.valore - a.valore);
+    state.rifornimento = salvato.rifornimento || [];
+    $('noteGenerali').value = salvato.noteGenerali || '';
+    st.className = 'status';
+    st.textContent = `Lancio ${nomeLancio(state.lancio)}: ${state.righe.length} titoli caricati.`;
+    render();
+    cercaCopertine(false);
+  } catch (e) {
+    st.className = 'status err'; st.textContent = 'Errore nel caricamento: ' + e.message;
+  } finally { btn.disabled = false; }
+}
+
+// Uscita decisa in Fine Giro per EAN (come Giro Manager): soglia sul prenotato totale di tutti i canali,
+// salvo scelta manuale sul titolo (titoli.uscita_giorno_override, vince il titolo più recente).
+async function uscitaFineGiro(eans){
+  const titoli = [];
+  for (let i = 0; i < eans.length; i += 100) {
+    const { data, error } = await sb.from('titoli').select('id,ean,uscita_giorno_override').in('ean', eans.slice(i, i + 100));
+    if (error) throw error;
+    titoli.push(...(data || []));
+  }
+  const tot = {};
+  const ids = titoli.map(t => t.id);
+  for (let i = 0; i < ids.length; i += 150) {
+    const parte = ids.slice(i, i + 150);
+    const rows = await selectTutto(() => sb.from('prenotato').select('titolo_id,quantita').in('titolo_id', parte).order('id'));
+    rows.forEach(p => { tot[p.titolo_id] = (tot[p.titolo_id] || 0) + (Number(p.quantita) || 0); });
+  }
+  const acc = {};
+  titoli.forEach(t => {
+    const a = acc[t.ean] || (acc[t.ean] = { tot: 0, override: null, overrideId: -1 });
+    a.tot += tot[t.id] || 0;
+    if (t.uscita_giorno_override && t.id > a.overrideId) { a.override = t.uscita_giorno_override; a.overrideId = t.id; }
+  });
+  const res = {};
+  Object.entries(acc).forEach(([ean, a]) => {
+    if (!a.tot && !a.override) return; // non in Fine Giro: si usa la soglia sul fornito
+    const calcolato = giornoDaSoglia(a.tot);
+    res[ean] = { giorno: a.override || calcolato, forzato: !!a.override && a.override !== calcolato };
+  });
+  return res;
+}
+
+/* ---------------------- Novità sbloccate a rifornimento ---------------------- */
+async function aggiungiRifornimento(){
+  const eans = [...new Set(($('eanRifornimento').value.match(/\d{13}/g) || []))]
+    .filter(e => !state.rifornimento.some(r => r.ean === e) && !state.righe.some(r => r.ean === e));
+  if (!eans.length) { toast('Nessun EAN nuovo da aggiungere (servono 13 cifre).', true); return; }
+  const { data, error } = await sb.from('titoli').select('id,ean,titolo,autore,editore_nome,prezzo').in('ean', eans).order('id', { ascending: false });
+  if (error) { toast('Errore: ' + error.message, true); return; }
+  const byEan = {};
+  (data || []).forEach(t => { if (!byEan[t.ean]) byEan[t.ean] = t; });
+  eans.forEach(e => {
+    const t = byEan[e] || {};
+    state.rifornimento.push({ ean: e, titolo: t.titolo || '', autore: t.autore || '', editore: t.editore_nome || '', prezzo: Number(t.prezzo || 0), nota: '' });
+  });
+  const nonTrovati = eans.filter(e => !byEan[e]);
+  $('eanRifornimento').value = '';
+  salva(); render(); cercaCopertine(false);
+  if (nonTrovati.length) toast(`Non trovati in anagrafica titoli: ${nonTrovati.join(', ')} — compila titolo e dati a mano nelle note.`, true, 8000);
+}
+function togliRifornimento(ean){ state.rifornimento = state.rifornimento.filter(r => r.ean !== ean); salva(); render(); }
+
+/* ---------------------- Salvataggio locale (note, giorni, rifornimento) ---------------------- */
+function salva(){
+  const k = chiaveLancio(); if (!k) return;
+  const giorni = {}, note = {};
+  state.righe.forEach(r => { if (r.giorno !== r.giornoCalcolato) giorni[r.ean] = r.giorno; if (r.nota) note[r.ean] = r.nota; });
+  lsSet(k, { giorni, note, rifornimento: state.rifornimento, noteGenerali: $('noteGenerali').value });
+}
+$('noteGenerali').addEventListener('input', () => salva());
+
+/* ---------------------- Render ---------------------- */
+function totali(){
+  const t = { copie: 0, valore: 0, titoli: 0, martedì: { copie: 0, valore: 0, titoli: 0 }, venerdì: { copie: 0, valore: 0, titoli: 0 } };
+  state.righe.forEach(r => {
+    t.copie += r.fornito; t.valore += r.valore; if (r.fornito > 0) t.titoli++;
+    const g = t[r.giorno]; if (g) { g.copie += r.fornito; g.valore += r.valore; if (r.fornito > 0) g.titoli++; }
+  });
+  return t;
+}
+
+function render(){
+  const has = state.righe.length > 0;
+  ['kpis', 'cardTitoli', 'cardNote'].forEach(id => $(id).classList.toggle('hidden', !has));
+  if (!has) return;
+  const t = totali();
+  $('kpis').innerHTML = `
+    <div class="kpi"><div class="lbl">Valore lancio ${esc(nomeLancio(state.lancio))}</div><div class="num">${fmtEuro(t.valore)}</div><div class="det">fornito × prezzo</div></div>
+    <div class="kpi"><div class="lbl">Copie fornite</div><div class="num">${fmtInt(t.copie)}</div></div>
+    <div class="kpi"><div class="lbl">Titoli</div><div class="num">${fmtInt(t.titoli)}</div><div class="det">con quantità</div></div>
+    <div class="kpi mar"><div class="lbl">Martedì</div><div class="num">${fmtEuro(t.martedì.valore)}</div><div class="det">${fmtInt(t.martedì.titoli)} titoli · ${fmtInt(t.martedì.copie)} copie</div></div>
+    <div class="kpi ven"><div class="lbl">Venerdì</div><div class="num">${fmtEuro(t.venerdì.valore)}</div><div class="det">${fmtInt(t.venerdì.titoli)} titoli · ${fmtInt(t.venerdì.copie)} copie</div></div>`;
+  document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.f === state.filtro));
+  const righe = state.righe.filter(r => state.filtro === 'tutti' || r.giorno === state.filtro);
+  let html = righe.map(r => `
+    <tr>
+      <td>${coverCell(r.ean)}</td>
+      <td class="mono">${esc(r.ean)}</td>
+      <td><div class="tit">${esc(r.titolo)}</div><div class="sm">${esc(r.autore)}</div></td>
+      <td>${esc(r.editore)}</td>
+      <td class="num">${fmtEuro(r.prezzo)}</td>
+      <td class="num">${fmtInt(r.fornito)}</td>
+      <td class="num"><b>${fmtEuro(r.valore)}</b></td>
+      <td>
+        <select class="day ${r.giorno}" data-ean="${esc(r.ean)}" onchange="cambiaGiorno(this)">
+          <option value="martedì"${r.giorno === 'martedì' ? ' selected' : ''}>Martedì</option>
+          <option value="venerdì"${r.giorno === 'venerdì' ? ' selected' : ''}>Venerdì</option>
+        </select>
+        <span class="sm" style="display:block;margin-top:2px">${r.giorno === r.giornoCalcolato ? esc(r.origineGiorno) : ''}</span>
+        ${r.giorno !== r.giornoCalcolato ? `<span class="forced">modificato a mano (era ${esc(r.giornoCalcolato)})</span>` : ''}
+      </td>
+      <td><textarea class="nota" data-ean="${esc(r.ean)}" oninput="cambiaNota(this)" placeholder="es. TOP AUTORE">${esc(r.nota)}</textarea></td>
+    </tr>`).join('');
+  if (!righe.length) html = `<tr><td colspan="9" class="sm" style="padding:16px">Nessun titolo per ${esc(state.filtro)}.</td></tr>`;
+  if (state.rifornimento.length) {
+    html += `<tr><td colspan="9" class="sez">NOVITÀ SBLOCCATE A RIFORNIMENTO</td></tr>` + state.rifornimento.map(r => `
+      <tr>
+        <td>${coverCell(r.ean)}</td>
+        <td class="mono">${esc(r.ean)}</td>
+        <td><div class="tit">${esc(r.titolo) || '<span class="sm">(non in anagrafica)</span>'}</div><div class="sm">${esc(r.autore)}</div></td>
+        <td>${esc(r.editore)}</td>
+        <td class="num">${r.prezzo ? fmtEuro(r.prezzo) : ''}</td>
+        <td></td><td></td><td></td>
+        <td style="display:flex;gap:4px;align-items:center"><textarea class="nota" data-ean="${esc(r.ean)}" data-rif="1" oninput="cambiaNota(this)">${esc(r.nota)}</textarea><button class="xbtn" title="Togli" onclick="togliRifornimento('${esc(r.ean)}')">✕</button></td>
+      </tr>`).join('');
+  }
+  $('tbody').innerHTML = html;
+}
+
+function coverCell(ean){
+  const c = state.cover[ean];
+  if (c && c.url) return `<div class="cov ok" onclick="apriCovModal('${esc(ean)}')" title="${esc(c.source)} — clic per cambiarla"><img src="${esc(c.url)}" alt="" loading="lazy"></div>`;
+  if (c && c.url === null) return `<div class="cov" onclick="apriCovModal('${esc(ean)}')" title="Non trovata: clic per incollare un indirizzo">non trovata</div>`;
+  return `<div class="cov" onclick="apriCovModal('${esc(ean)}')">…</div>`;
+}
+
+function setFiltro(f){ state.filtro = f; render(); }
+function cambiaGiorno(sel){
+  const r = state.righe.find(x => x.ean === sel.dataset.ean); if (!r) return;
+  r.giorno = sel.value; salva(); render();
+}
+function cambiaNota(ta){
+  const lista = ta.dataset.rif ? state.rifornimento : state.righe;
+  const r = lista.find(x => x.ean === ta.dataset.ean); if (r) { r.nota = ta.value; salva(); }
+}
+
+/* ---------------------- Copertine online ---------------------- */
+// Stesse fonti di PDE Copertine: Feltrinelli, IBS, Mondadori, OpenLibrary, Google Books.
+function testImg(url){
+  return new Promise(resolve => {
+    const img = new Image(); let fatto = false;
+    const fine = v => { if (!fatto) { fatto = true; resolve(v); } };
+    img.onload = () => fine(img.naturalWidth > 50 && img.naturalHeight > 50);
+    img.onerror = () => fine(false);
+    setTimeout(() => fine(false), 8000);
+    img.src = url;
+  });
+}
+async function findCover(ean){
+  const candidati = [
+    [`https://www.lafeltrinelli.it/images/${ean}_0_0_424_0_75.jpg`, 'Feltrinelli'],
+    [`https://img.ibs.it/img/${ean}L.jpg`, 'IBS'],
+    [`https://images.mondadoristore.it/immagini/${ean}COP.jpg`, 'Mondadori'],
+    [`https://covers.openlibrary.org/b/isbn/${ean}-L.jpg?default=false`, 'OpenLibrary'],
+  ];
+  for (const [u, s] of candidati) if (await testImg(u)) return { url: u, source: s };
+  try {
+    const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${ean}&maxResults=1`);
+    const d = await r.json();
+    const imgs = d.items && d.items[0] && d.items[0].volumeInfo.imageLinks || {};
+    const raw = imgs.large || imgs.medium || imgs.small || imgs.thumbnail || imgs.smallThumbnail || '';
+    const url = raw.replace('http://', 'https://').replace('&edge=curl', '');
+    if (url && await testImg(url)) return { url, source: 'Google Books' };
+  } catch (e) {}
+  return null;
+}
+async function cercaCopertine(ancheNonTrovate){
+  const runId = ++state.covRunId;
+  const eans = [...state.righe, ...state.rifornimento].map(r => r.ean)
+    .filter(e => !state.cover[e] || (ancheNonTrovate && state.cover[e].url === null));
+  if (!eans.length) { aggiornaProgressCov(); return; }
+  let fatti = 0;
+  const coda = [...eans];
+  const worker = async () => {
+    while (coda.length) {
+      const ean = coda.shift();
+      const c = await findCover(ean);
+      if (runId !== state.covRunId) return;
+      state.cover[ean] = c || { url: null };
+      fatti++;
+      $('covProgress').textContent = `Copertine ${fatti}/${eans.length}…`;
+      aggiornaCella(ean);
+    }
+  };
+  await Promise.all(Array.from({ length: 6 }, worker));
+  if (runId === state.covRunId) aggiornaProgressCov();
+}
+function aggiornaCella(ean){
+  document.querySelectorAll(`textarea.nota[data-ean="${ean}"]`).forEach(ta => {
+    const td = ta.closest('tr').firstElementChild; td.innerHTML = coverCell(ean);
+  });
+}
+function aggiornaProgressCov(){
+  const tutti = [...state.righe, ...state.rifornimento];
+  const trovate = tutti.filter(r => state.cover[r.ean] && state.cover[r.ean].url).length;
+  $('covProgress').textContent = `Copertine trovate: ${trovate}/${tutti.length}`;
+}
+let covModalEan = null;
+function apriCovModal(ean){ covModalEan = ean; $('covModalEan').textContent = ean; $('covModalUrl').value = (state.cover[ean] && state.cover[ean].url) || ''; $('covModal').classList.remove('hidden'); $('covModalUrl').focus(); }
+function chiudiCovModal(){ $('covModal').classList.add('hidden'); covModalEan = null; }
+async function salvaCovModal(){
+  const url = $('covModalUrl').value.trim(); if (!url || !covModalEan) return;
+  if (!(await testImg(url))) { toast('Immagine non caricabile da questo indirizzo.', true); return; }
+  state.cover[covModalEan] = { url, source: 'manuale' };
+  delete state.coverBlob[covModalEan];
+  aggiornaCella(covModalEan); aggiornaProgressCov(); chiudiCovModal();
+}
+
+// Scarica l'immagine come dati (per incorporarla nell'Excel): prima diretta, poi via
+// proxy-copertine (Supabase, serve il login: Feltrinelli non ha CORS), infine via weserv.
+async function fetchImgBlob(url){
+  const { data: { session } } = await sb.auth.getSession();
+  const tentativi = [[url, {}]];
+  if (session) tentativi.push([`${SUPABASE_URL}/functions/v1/proxy-copertine?url=${encodeURIComponent(url)}`, { headers: { Authorization: `Bearer ${session.access_token}`, apikey: SUPABASE_KEY } }]);
+  tentativi.push([`https://images.weserv.nl/?url=${encodeURIComponent(url.replace(/^https?:\/\//, ''))}&output=jpg`, {}]);
+  for (const [u, opts] of tentativi) {
+    try {
+      const res = await fetch(u, opts);
+      if (!res.ok) continue;
+      const blob = await res.blob();
+      if (blob.type.startsWith('image/') && blob.size > 1000) return blob;
+    } catch (e) {}
+  }
+  return null;
+}
+// Converte sempre in JPEG ridotto (Excel non accetta webp e i file restano leggeri)
+async function blobAJpegBase64(blob){
+  const bmp = await createImageBitmap(blob);
+  const h = 240, w = Math.round(bmp.width * h / bmp.height);
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); ctx.drawImage(bmp, 0, 0, w, h);
+  return cv.toDataURL('image/jpeg', 0.85).split(',')[1];
+}
+async function coverBase64(ean){
+  if (state.coverBlob[ean] !== undefined) return state.coverBlob[ean];
+  const c = state.cover[ean];
+  let b64 = null;
+  const urls = [c && c.url, `https://www.lafeltrinelli.it/images/${ean}_0_0_424_0_75.jpg`, `https://img.ibs.it/img/${ean}L.jpg`,
+    `https://images.mondadoristore.it/immagini/${ean}COP.jpg`, `https://covers.openlibrary.org/b/isbn/${ean}-L.jpg?default=false`].filter(Boolean);
+  for (const u of [...new Set(urls)]) {
+    try { const blob = await fetchImgBlob(u); if (blob) { b64 = await blobAJpegBase64(blob); break; } } catch (e) {}
+  }
+  state.coverBlob[ean] = b64;
+  return b64;
+}
+
+/* ---------------------- Excel (stesso schema del file LANCIO_NN_AAAA) ---------------------- */
+async function costruisciExcel(){
+  const l = state.lancio;
+  const nomeFile = `LANCIO_${String(l.numero).replace('.', '_')}_${l.anno}.xlsx`;
+  const tutti = [...state.righe, ...state.rifornimento];
+  // copertine: aspetta la ricerca in corso e scarica le immagini
+  $('covProgress').textContent = 'Preparo le copertine per l\'Excel…';
+  let n = 0;
+  const imgs = {};
+  const coda = [...tutti];
+  await Promise.all(Array.from({ length: 6 }, async () => {
+    while (coda.length) { const r = coda.shift(); if (!state.cover[r.ean]) state.cover[r.ean] = (await findCover(r.ean)) || { url: null }; imgs[r.ean] = await coverBase64(r.ean); $('covProgress').textContent = `Copertine per l'Excel ${++n}/${tutti.length}…`; }
+  }));
+  aggiornaProgressCov();
+  const senzaCover = tutti.filter(r => !imgs[r.ean]).map(r => r.ean);
+  if (senzaCover.length) toast(`${senzaCover.length} copertine non inserite nell'Excel (non trovate o non scaricabili): ${senzaCover.slice(0, 5).join(', ')}${senzaCover.length > 5 ? '…' : ''}`, true, 9000);
+
+  const t = totali();
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'PDE Newsweek';
+  const ws = wb.addWorksheet('LANCIO', { views: [{ state: 'frozen', ySplit: 3 }] });
+  ws.columns = [8.43, 18, 10.29, 60, 24, 22, 10, 13, 16, 13, 30].map(w => ({ width: w }));
+  const fill = argb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
+  const bordo = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+  const centro = { horizontal: 'center', vertical: 'middle', wrapText: true };
+  const EURO = '#,##0.00 "€"';
+
+  ws.mergeCells('B1:G2');
+  const tit = ws.getCell('B1');
+  tit.value = `LANCIO ${String(l.numero).replace('.', ',')} - ${l.anno}`;
+  tit.font = { name: 'Calibri', size: 48, bold: true, color: { argb: 'FF203764' } };
+  tit.fill = fill('FFB4C6E7'); tit.alignment = centro;
+  const testate = [['H', 'COPIE TOTALI LANCIO', t.copie, '#,##0'], ['I', 'VALORE TOTALE LANCIO', t.valore, EURO], ['J', 'TOTALE TITOLI', t.titoli, '#,##0'],
+    ['K', 'MARTEDÌ / VENERDÌ', `${fmtEuro(t.martedì.valore)} / ${fmtEuro(t.venerdì.valore)}`, '@']];
+  testate.forEach(([c, lbl, v, nf]) => {
+    const a = ws.getCell(c + '1'); a.value = lbl; a.font = { name: 'Calibri', size: 12, bold: true }; a.fill = fill('FFFFC000'); a.alignment = centro;
+    const b = ws.getCell(c + '2'); b.value = v; b.numFmt = nf; b.font = { name: 'Calibri', size: c === 'K' ? 11 : 14, bold: true }; b.fill = fill('FFC6E0B4'); b.alignment = centro;
+  });
+  ws.getRow(1).height = 42; ws.getRow(2).height = 30;
+
+  const head = ['EAN', 'COVER', 'TITOLO', 'AUTORE', 'EDITORE', 'Prezzo', 'QTA LANCIO', 'VALORE', 'USCITA', 'NOTE'];
+  const hr = ws.getRow(3);
+  head.forEach((h, i) => { const c = hr.getCell(i + 2); c.value = h; c.font = { name: 'Calibri', size: 12, bold: true }; c.alignment = centro; c.border = bordo; });
+
+  let riga = 4;
+  const scriviRiga = (r, conQta) => {
+    const row = ws.getRow(riga);
+    const vals = [r.ean, '', r.titolo, r.autore, r.editore, r.prezzo || null, conQta ? r.fornito : null, conQta ? r.valore : null, conQta ? r.giorno.toUpperCase() : '', r.nota || ''];
+    vals.forEach((v, i) => {
+      const c = row.getCell(i + 2); c.value = v; c.border = bordo;
+      c.font = { name: 'Calibri', size: i === 9 ? 12 : 11, bold: i === 8, color: i === 8 ? { argb: r.giorno === 'martedì' ? 'FFC8452A' : 'FF1A86B8' } : undefined };
+      c.alignment = { vertical: 'middle', horizontal: i === 9 || i === 8 ? 'center' : 'left', wrapText: i === 9 || i === 2 };
+    });
+    row.getCell(2).numFmt = '@';
+    row.getCell(7).numFmt = EURO; row.getCell(9).numFmt = EURO; row.getCell(8).numFmt = '#,##0';
+    row.height = 62;
+    const b64 = imgs[r.ean];
+    if (b64) {
+      const id = wb.addImage({ base64: b64, extension: 'jpeg' });
+      ws.addImage(id, { tl: { col: 2.12, row: riga - 1 + 0.06 }, ext: { width: 57, height: 78 }, editAs: 'oneCell' });
+    }
+    riga++;
+  };
+  state.righe.forEach(r => scriviRiga(r, true));
+  if (state.rifornimento.length) {
+    ws.mergeCells(`B${riga}:K${riga}`);
+    const s = ws.getCell(`B${riga}`);
+    s.value = 'NOVITÀ SBLOCCATE A RIFORNIMENTO';
+    s.font = { name: 'Calibri', size: 36, bold: true }; s.fill = fill('FFFFC000'); s.alignment = centro;
+    ws.getRow(riga).height = 48;
+    riga++;
+    state.rifornimento.forEach(r => scriviRiga({ ...r, giorno: '' }, false));
+  }
+  const noteGen = $('noteGenerali').value.trim();
+  if (noteGen) {
+    riga++;
+    ws.getCell(`B${riga}`).value = 'NOTE'; ws.getCell(`B${riga}`).font = { bold: true, size: 12 };
+    ws.mergeCells(`C${riga}:K${riga}`);
+    const c = ws.getCell(`C${riga}`); c.value = noteGen; c.alignment = { wrapText: true, vertical: 'top' };
+    ws.getRow(riga).height = Math.min(400, 16 * (noteGen.split('\n').length + 1));
+  }
+  const buffer = await wb.xlsx.writeBuffer();
+  return { buffer, nomeFile };
+}
+
+function scaricaBlob(blob, nome){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = nome;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+async function conBottoni(fn){
+  const ids = ['btnExcel', 'btnMailInt', 'btnMailExt'];
+  ids.forEach(id => $(id).disabled = true);
+  try { await fn(); } catch (e) { console.error(e); toast('Errore: ' + e.message, true, 8000); }
+  finally { ids.forEach(id => $(id).disabled = false); }
+}
+function scaricaExcel(){
+  return conBottoni(async () => {
+    const { buffer, nomeFile } = await costruisciExcel();
+    scaricaBlob(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), nomeFile);
+  });
+}
+
+/* ---------------------- Mail (.eml con allegato, si apre in Outlook come bozza) ---------------------- */
+// Il browser non può allegare file a una mail: si scarica un .eml già pronto
+// (destinatari, oggetto, testo, Excel allegato). "X-Unsent: 1" lo fa aprire come bozza da inviare.
+function bufferABase64(buf){
+  const bytes = new Uint8Array(buf); let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+function creaEml({ to, cc = [], bcc = [], oggetto, corpoHtml, nomeAllegato, allegatoBase64 }){
+  const a76 = b64 => b64.replace(/(.{76})/g, '$1\r\n').replace(/\r\n$/, '');
+  const b64Utf8 = t => bufferABase64(new TextEncoder().encode(t));
+  const confine = `----=_Newsweek_${Date.now()}`;
+  return [
+    `To: ${to.join(', ')}`,
+    ...(cc.length ? [`Cc: ${cc.join(', ')}`] : []),
+    ...(bcc.length ? [`Bcc: ${bcc.join('; ')}`] : []),
+    `Subject: =?UTF-8?B?${b64Utf8(oggetto)}?=`,
+    'X-Unsent: 1',
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/mixed; boundary="${confine}"`,
+    '',
+    `--${confine}`,
+    'Content-Type: text/html; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    a76(b64Utf8(corpoHtml)),
+    `--${confine}`,
+    `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; name="${nomeAllegato}"`,
+    `Content-Disposition: attachment; filename="${nomeAllegato}"`,
+    'Content-Transfer-Encoding: base64',
+    '',
+    a76(allegatoBase64),
+    `--${confine}--`,
+    '',
+  ].join('\r\n');
+}
+function inoltraMail(tipo){
+  return conBottoni(async () => {
+    const { buffer, nomeFile } = await costruisciExcel();
+    const l = state.lancio;
+    const oggetto = `LANCIO ${String(l.numero).replace('.', ',')} - ${l.anno}`;
+    const esterni = tipo === 'esterni';
+    const eml = creaEml({
+      to: esterni ? MAIL_ESTERNI_TO : MAIL_INTERNI_TO,
+      bcc: esterni ? MAIL_ESTERNI_BCC : [],
+      oggetto,
+      corpoHtml: '<!doctype html><html><head><meta charset="UTF-8"></head><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;">' + MAIL_CORPO_HTML + '</body></html>',
+      nomeAllegato: nomeFile,
+      allegatoBase64: bufferABase64(buffer),
+    });
+    scaricaBlob(new Blob([eml], { type: 'message/rfc822' }), `${oggetto.replace(/[^\w-]+/g, '_')}_${esterni ? 'esterni' : 'interni'}.eml`);
+    toast(`Mail ${esterni ? 'esterni' : 'interni'} scaricata con l'Excel allegato: apri il file .eml e si apre in Outlook, pronta da inviare.`, false, 9000);
+  });
+}
+
+/* ---------------------- Avvio ---------------------- */
+$('selSettimana').value = isoLocale(new Date());
+$('selSettimana').addEventListener('change', () => state.calendario.length && aggiornaSelectLanci(true));
+$('selOffset').addEventListener('change', () => state.calendario.length && aggiornaSelectLanci(true));
+$('selLancio').addEventListener('change', () => caricaLancio());
+document.addEventListener('keydown', e => { if (e.key === 'Escape') chiudiCovModal(); });
+avvio();
+</script>
+</body>
+</html>
