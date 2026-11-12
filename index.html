@@ -338,16 +338,20 @@ async function caricaLancio(){
     // lanci_settimanali: num_lancio salvato ×10 (460 = lancio 46)
     const numDb = Math.round(r.numero_lancio * 10);
     const lanci = await selectTutto(() => sb.from('lanci_settimanali')
-      .select('ean,titolo,autore,editore,prezzo,prenotato_iscrizione,prenotato_trasmesso,giorno_uscita_override')
+      .select('ean,titolo,autore,editore,codice_editore,prezzo,prenotato_iscrizione,prenotato_trasmesso,giorno_uscita_override')
       .eq('anno_lancio', r.anno).eq('num_lancio', numDb).order('ean'));
     if (!lanci.length) {
       st.className = 'status err';
       st.textContent = `Il lancio ${nomeLancio(state.lancio)} non ha ancora titoli in Lanci settimanali (Giro Manager).`;
       state.righe = []; render(); return;
     }
-    const uscite = await uscitaFineGiro(lanci.map(x => x.ean));
+    // esclusi i titoli degli editori nuovi non ancora entrati in PDE nella settimana di vendita
+    const futuri = await editoriNonAncoraEntrati(state.lancio.vendita);
+    const esclusi = lanci.filter(x => futuri.has(normCodEd(x.codice_editore)));
+    const tenuti = lanci.filter(x => !futuri.has(normCodEd(x.codice_editore)));
+    const uscite = await uscitaFineGiro(tenuti.map(x => x.ean));
     const salvato = lsGet(chiaveLancio(), {});
-    state.righe = lanci.map(x => {
+    state.righe = tenuti.map(x => {
       const fornito = Number(x.prenotato_trasmesso ?? x.prenotato_iscrizione ?? 0);
       const prezzo = Number(x.prezzo || 0);
       const fg = uscite[x.ean];
@@ -363,12 +367,32 @@ async function caricaLancio(){
     state.rifornimento = salvato.rifornimento || [];
     $('noteGenerali').value = salvato.noteGenerali || '';
     st.className = 'status';
-    st.textContent = `Lancio ${nomeLancio(state.lancio)}: ${state.righe.length} titoli caricati.`;
+    st.textContent = `Lancio ${nomeLancio(state.lancio)}: ${state.righe.length} titoli caricati.`
+      + (esclusi.length ? ` Esclusi ${esclusi.length} titoli di editori nuovi che entrano più avanti (${[...new Set(esclusi.map(x => x.editore))].join(', ')}).` : '');
     render();
     cercaCopertine(false);
   } catch (e) {
     st.className = 'status err'; st.textContent = 'Errore nel caricamento: ' + e.message;
   } finally { btn.disabled = false; }
+}
+
+// Editori nuovi (Giro Manager → Editori new entry / Ranking "in arrivo") non ancora entrati nella settimana di vendita.
+// Data di ingresso: quella indicata, altrimenti il 1° gennaio dell'anno dopo l'inserimento (entrano l'anno successivo).
+const normCodEd = c => String(c || '').trim().toUpperCase().replace(/^0+(?=.)/, '');
+async function editoriNonAncoraEntrati(vendita){
+  const [ne, rk] = await Promise.all([
+    sb.from('editori_new_entry').select('codice_editore,data_ingresso_rpn,created_at').eq('attivo', true),
+    sb.from('ranking_editori').select('codice_editore,data_ingresso_rpn').eq('stato_rpn', 'in_arrivo'),
+  ]);
+  if (ne.error) throw ne.error;
+  const out = new Set();
+  const entraDopo = (data, creato) => {
+    const ingresso = data ? parseIso(data) : new Date((creato ? new Date(creato) : new Date()).getFullYear() + 1, 0, 1);
+    return vendita < ingresso;
+  };
+  (ne.data || []).forEach(e => { if (e.codice_editore && entraDopo(e.data_ingresso_rpn, e.created_at)) out.add(normCodEd(e.codice_editore)); });
+  (rk.data || []).forEach(e => { if (e.codice_editore && e.data_ingresso_rpn && entraDopo(e.data_ingresso_rpn)) out.add(normCodEd(e.codice_editore)); });
+  return out;
 }
 
 // Uscita decisa in Fine Giro per EAN (come Giro Manager): soglia sul prenotato totale di tutti i canali,
@@ -407,11 +431,15 @@ async function aggiungiRifornimento(){
   const eans = [...new Set(($('eanRifornimento').value.match(/\d{13}/g) || []))]
     .filter(e => !state.rifornimento.some(r => r.ean === e) && !state.righe.some(r => r.ean === e));
   if (!eans.length) { toast('Nessun EAN nuovo da aggiungere (servono 13 cifre).', true); return; }
-  const { data, error } = await sb.from('titoli').select('id,ean,titolo,autore,editore_nome,prezzo').in('ean', eans).order('id', { ascending: false });
+  const { data, error } = await sb.from('titoli').select('id,ean,titolo,autore,editore_nome,codice_editore,prezzo').in('ean', eans).order('id', { ascending: false });
   if (error) { toast('Errore: ' + error.message, true); return; }
   const byEan = {};
   (data || []).forEach(t => { if (!byEan[t.ean]) byEan[t.ean] = t; });
-  eans.forEach(e => {
+  let futuri = new Set();
+  try { if (state.lancio) futuri = await editoriNonAncoraEntrati(state.lancio.vendita); } catch (e) { /* senza elenco: nessuna esclusione */ }
+  const scartati = eans.filter(e => byEan[e] && futuri.has(normCodEd(byEan[e].codice_editore)));
+  if (scartati.length) toast(`Non aggiunti (editore nuovo che entra più avanti): ${scartati.map(e => `${e} ${byEan[e].editore_nome || ''}`).join(', ')}`, true, 8000);
+  eans.filter(e => !scartati.includes(e)).forEach(e => {
     const t = byEan[e] || {};
     state.rifornimento.push({ ean: e, titolo: t.titolo || '', autore: t.autore || '', editore: t.editore_nome || '', prezzo: Number(t.prezzo || 0), nota: '' });
   });
