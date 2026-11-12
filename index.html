@@ -329,7 +329,8 @@ async function selectTutto(builderFn){
 async function caricaLancio(){
   const r = state.calendario[Number($('selLancio').value)];
   if (!r) return;
-  state.lancio = { numero: r.numero_lancio, anno: r.anno, data_iscrizione: r.data_iscrizione };
+  state.lancio = { numero: r.numero_lancio, anno: r.anno, data_iscrizione: r.data_iscrizione,
+    vendita: settimanaVendita(r, Math.max(0, Number($('selOffset').value) || 0)) };
   const st = $('statusLancio');
   const btn = $('btnCarica'); btn.disabled = true;
   st.className = 'status'; st.textContent = `Carico i titoli del lancio ${nomeLancio(state.lancio)}…`;
@@ -615,12 +616,29 @@ async function coverBase64(ean){
   return b64;
 }
 
-/* ---------------------- Excel (stesso schema del file LANCIO_NN_AAAA) ---------------------- */
-async function costruisciExcel(){
+/* ---------------------- Excel ---------------------- */
+// tipo 'interni': file completo (con QTA LANCIO e VALORE)
+// tipo 'esterni': senza copie e valori (niente colonne QTA LANCIO / VALORE né totali economici)
+const XL = {
+  navy: 'FF0F1C4D', blu: 'FF1F6FE5', ink: 'FF1F2937', grigio: 'FF6B7280', linea: 'FFE5E7EB', zebra: 'FFF7F9FC', tile: 'FFF2F5FB',
+  mar: 'FFC8452A', marBg: 'FFFDE8E3', ven: 'FF1A86B8', venBg: 'FFE0F2FB', rif: 'FF9A6B00', rifBg: 'FFFFF4D6', bianco: 'FFFFFFFF',
+};
+const mesiIt = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
+function periodoVendita(){
+  const l = state.lancio;
+  if (!l || !l.vendita) return '';
+  const da = l.vendita, a = addGiorni(da, 6);
+  const meseDa = da.getMonth() === a.getMonth() ? '' : ' ' + mesiIt[da.getMonth()];
+  return `In libreria dal ${da.getDate()}${meseDa} al ${a.getDate()} ${mesiIt[a.getMonth()]} ${a.getFullYear()} · uscite il martedì ${addGiorni(da, 1).getDate()} e il venerdì ${addGiorni(da, 4).getDate()}`;
+}
+
+async function costruisciExcel(tipo = 'interni'){
+  const esterni = tipo === 'esterni';
   const l = state.lancio;
   const nomeFile = `LANCIO_${String(l.numero).replace('.', '_')}_${l.anno}.xlsx`;
   const tutti = [...state.righe, ...state.rifornimento];
-  // copertine: aspetta la ricerca in corso e scarica le immagini
+
+  // copertine: scarica le immagini (in parallelo, 6 alla volta)
   $('covProgress').textContent = 'Preparo le copertine per l\'Excel…';
   let n = 0;
   const imgs = {};
@@ -632,70 +650,174 @@ async function costruisciExcel(){
   const senzaCover = tutti.filter(r => !imgs[r.ean]).map(r => r.ean);
   if (senzaCover.length) toast(`${senzaCover.length} copertine non inserite nell'Excel (non trovate o non scaricabili): ${senzaCover.slice(0, 5).join(', ')}${senzaCover.length > 5 ? '…' : ''}`, true, 9000);
 
+  // colonne (la A resta un margine stretto)
+  const COLS = [
+    { k: 'cover', h: 'COVER', w: 11 },
+    { k: 'ean', h: 'EAN', w: 16 },
+    { k: 'titolo', h: 'TITOLO', w: 44 },
+    { k: 'autore', h: 'AUTORE', w: 24 },
+    { k: 'editore', h: 'EDITORE', w: 24 },
+    { k: 'prezzo', h: 'PREZZO', w: 10 },
+    ...(esterni ? [] : [{ k: 'fornito', h: 'QTA LANCIO', w: 12 }, { k: 'valore', h: 'VALORE', w: 15 }]),
+    { k: 'giorno', h: 'USCITA', w: 12 },
+    { k: 'nota', h: 'NOTE', w: 34 },
+  ];
+  const colDi = k => COLS.findIndex(c => c.k === k) + 2; // indice colonna 1-based (A = margine)
+  const lettera = i => String.fromCharCode(64 + i);
+  const ultima = lettera(COLS.length + 1);
+
   const t = totali();
   const wb = new ExcelJS.Workbook();
   wb.creator = 'PDE Newsweek';
-  const ws = wb.addWorksheet('LANCIO', { views: [{ state: 'frozen', ySplit: 3 }] });
-  ws.columns = [8.43, 18, 10.29, 60, 24, 22, 10, 13, 16, 13, 30].map(w => ({ width: w }));
-  const fill = argb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
-  const bordo = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-  const centro = { horizontal: 'center', vertical: 'middle', wrapText: true };
-  const EURO = '#,##0.00 "€"';
-
-  ws.mergeCells('B1:G2');
-  const tit = ws.getCell('B1');
-  tit.value = `LANCIO ${String(l.numero).replace('.', ',')} - ${l.anno}`;
-  tit.font = { name: 'Calibri', size: 48, bold: true, color: { argb: 'FF203764' } };
-  tit.fill = fill('FFB4C6E7'); tit.alignment = centro;
-  const testate = [['H', 'COPIE TOTALI LANCIO', t.copie, '#,##0'], ['I', 'VALORE TOTALE LANCIO', t.valore, EURO], ['J', 'TOTALE TITOLI', t.titoli, '#,##0'],
-    ['K', 'MARTEDÌ / VENERDÌ', `${fmtEuro(t.martedì.valore)} / ${fmtEuro(t.venerdì.valore)}`, '@']];
-  testate.forEach(([c, lbl, v, nf]) => {
-    const a = ws.getCell(c + '1'); a.value = lbl; a.font = { name: 'Calibri', size: 12, bold: true }; a.fill = fill('FFFFC000'); a.alignment = centro;
-    const b = ws.getCell(c + '2'); b.value = v; b.numFmt = nf; b.font = { name: 'Calibri', size: c === 'K' ? 11 : 14, bold: true }; b.fill = fill('FFC6E0B4'); b.alignment = centro;
+  const ws = wb.addWorksheet('LANCIO', {
+    properties: { tabColor: { argb: XL.navy } },
+    views: [{ state: 'frozen', ySplit: 8, showGridLines: false }],
+    pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+      margins: { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 }, printTitlesRow: '8:8' },
   });
-  ws.getRow(1).height = 42; ws.getRow(2).height = 30;
+  ws.columns = [{ width: 2 }, ...COLS.map(c => ({ width: c.w }))];
+  const fill = argb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
+  const font = (o = {}) => ({ name: 'Calibri', size: 10.5, color: { argb: XL.ink }, ...o });
+  const EURO = '#,##0.00 "€"', EURO0 = '#,##0 "€"';
 
-  const head = ['EAN', 'COVER', 'TITOLO', 'AUTORE', 'EDITORE', 'Prezzo', 'QTA LANCIO', 'VALORE', 'USCITA', 'NOTE'];
-  const hr = ws.getRow(3);
-  head.forEach((h, i) => { const c = hr.getCell(i + 2); c.value = h; c.font = { name: 'Calibri', size: 12, bold: true }; c.alignment = centro; c.border = bordo; });
+  // ---- intestazione
+  ws.mergeCells(`B1:${lettera(colDi('titolo'))}1`);
+  const c1 = ws.getCell('B1');
+  c1.value = `Lancio ${String(l.numero).replace('.', ',')} · ${l.anno}`;
+  c1.font = font({ size: 26, bold: true, color: { argb: XL.navy } });
+  c1.alignment = { vertical: 'middle' };
+  ws.getRow(1).height = 40;
+  ws.mergeCells(`${lettera(colDi('autore'))}1:${ultima}1`);
+  const c1b = ws.getCell(`${lettera(colDi('autore'))}1`);
+  c1b.value = 'PDE · NOVITÀ IN USCITA';
+  c1b.font = font({ size: 10, bold: true, color: { argb: XL.blu } });
+  c1b.alignment = { horizontal: 'right', vertical: 'middle' };
+  ws.mergeCells(`B2:${ultima}2`);
+  const c2 = ws.getCell('B2');
+  c2.value = periodoVendita() || `Novità in uscita questa settimana`;
+  c2.font = font({ size: 11, color: { argb: XL.grigio } });
+  ws.getRow(2).height = 20;
+  // linea sottile sotto l'intestazione
+  for (let i = 2; i <= COLS.length + 1; i++) ws.getCell(3, i).border = { top: { style: 'medium', color: { argb: XL.navy } } };
+  ws.getRow(3).height = 8;
 
-  let riga = 4;
+  // ---- riquadri riepilogo (righe 4-6)
+  const tiles = esterni ? [
+    { span: ['cover', 'ean'], lbl: 'TITOLI IN USCITA', val: t.titoli, nf: '#,##0', det: state.rifornimento.length ? `+ ${state.rifornimento.length} sbloccati a rifornimento` : '', col: XL.navy },
+    { span: ['titolo', 'titolo'], lbl: 'USCITA MARTEDÌ', val: t.martedì.titoli, nf: '#,##0', det: 'titoli', col: XL.mar },
+    { span: ['autore', 'autore'], lbl: 'USCITA VENERDÌ', val: t.venerdì.titoli, nf: '#,##0', det: 'titoli', col: XL.ven },
+  ] : [
+    { span: ['cover', 'ean'], lbl: 'TITOLI', val: t.titoli, nf: '#,##0', det: state.rifornimento.length ? `+ ${state.rifornimento.length} a rifornimento` : 'con quantità', col: XL.navy },
+    { span: ['titolo', 'titolo'], lbl: 'VALORE LANCIO', val: t.valore, nf: EURO0, det: 'fornito × prezzo', col: XL.navy },
+    { span: ['autore', 'autore'], lbl: 'COPIE FORNITE', val: t.copie, nf: '#,##0', det: '', col: XL.navy },
+    { span: ['editore', 'prezzo'], lbl: 'MARTEDÌ', val: t.martedì.valore, nf: EURO0, det: `${fmtInt(t.martedì.titoli)} titoli · ${fmtInt(t.martedì.copie)} copie`, col: XL.mar },
+    { span: ['fornito', 'giorno'], lbl: 'VENERDÌ', val: t.venerdì.valore, nf: EURO0, det: `${fmtInt(t.venerdì.titoli)} titoli · ${fmtInt(t.venerdì.copie)} copie`, col: XL.ven },
+  ];
+  tiles.forEach(tl => {
+    const a = colDi(tl.span[0]), b = colDi(tl.span[1]);
+    [4, 5, 6].forEach((r, idx) => {
+      if (b > a) ws.mergeCells(r, a, r, b);
+      const c = ws.getCell(r, a);
+      c.value = [tl.lbl, tl.val, tl.det][idx];
+      c.font = [font({ size: 9, bold: true, color: { argb: XL.grigio } }), font({ size: 18, bold: true, color: { argb: tl.col } }), font({ size: 9, color: { argb: XL.grigio } })][idx];
+      if (idx === 1) c.numFmt = tl.nf;
+      c.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+      for (let k = a; k <= b; k++) {
+        ws.getCell(r, k).fill = fill(XL.tile);
+        if (k === a) ws.getCell(r, k).border = { left: { style: 'thick', color: { argb: tl.col } } };
+      }
+    });
+  });
+  ws.getRow(4).height = 18; ws.getRow(5).height = 28; ws.getRow(6).height = 16; ws.getRow(7).height = 12;
+
+  // ---- tabella
+  const HEAD = 8;
+  const hr = ws.getRow(HEAD);
+  COLS.forEach((c, i) => {
+    const cell = hr.getCell(i + 2);
+    cell.value = c.h;
+    cell.font = font({ size: 9.5, bold: true, color: { argb: XL.bianco } });
+    cell.fill = fill(XL.navy);
+    cell.alignment = { vertical: 'middle', horizontal: ['prezzo', 'fornito', 'valore'].includes(c.k) ? 'right' : ['cover', 'giorno'].includes(c.k) ? 'center' : 'left', indent: ['prezzo', 'fornito', 'valore', 'cover', 'giorno'].includes(c.k) ? 0 : 1 };
+  });
+  hr.height = 26;
+
+  let riga = HEAD + 1, z = 0;
   const scriviRiga = (r, conQta) => {
     const row = ws.getRow(riga);
-    const vals = [r.ean, '', r.titolo, r.autore, r.editore, r.prezzo || null, conQta ? r.fornito : null, conQta ? r.valore : null, conQta ? r.giorno.toUpperCase() : '', r.nota || ''];
-    vals.forEach((v, i) => {
-      const c = row.getCell(i + 2); c.value = v; c.border = bordo;
-      c.font = { name: 'Calibri', size: i === 9 ? 12 : 11, bold: i === 8, color: i === 8 ? { argb: r.giorno === 'martedì' ? 'FFC8452A' : 'FF1A86B8' } : undefined };
-      c.alignment = { vertical: 'middle', horizontal: i === 9 || i === 8 ? 'center' : 'left', wrapText: i === 9 || i === 2 };
+    const bg = z++ % 2 ? XL.zebra : XL.bianco;
+    COLS.forEach((c, i) => {
+      const cell = row.getCell(i + 2);
+      cell.fill = fill(bg);
+      cell.border = { bottom: { style: 'thin', color: { argb: XL.linea } } };
+      cell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1, wrapText: ['titolo', 'nota', 'autore', 'editore'].includes(c.k) };
+      cell.font = font();
+      switch (c.k) {
+        case 'cover': cell.value = ''; break;
+        case 'ean': cell.value = r.ean; cell.numFmt = '@'; cell.font = font({ size: 10, color: { argb: XL.grigio } }); break;
+        case 'titolo': cell.value = r.titolo; cell.font = font({ bold: true, color: { argb: XL.navy } }); break;
+        case 'autore': cell.value = r.autore; break;
+        case 'editore': cell.value = r.editore; cell.font = font({ color: { argb: XL.grigio } }); break;
+        case 'prezzo': cell.value = r.prezzo || null; cell.numFmt = EURO; cell.alignment = { vertical: 'middle', horizontal: 'right' }; break;
+        case 'fornito': cell.value = conQta ? r.fornito : null; cell.numFmt = '#,##0'; cell.alignment = { vertical: 'middle', horizontal: 'right' }; break;
+        case 'valore': cell.value = conQta ? r.valore : null; cell.numFmt = EURO; cell.font = font({ bold: true }); cell.alignment = { vertical: 'middle', horizontal: 'right' }; break;
+        case 'giorno':
+          cell.alignment = { vertical: 'middle', horizontal: 'center' };
+          if (conQta && r.giorno) {
+            const mar = r.giorno === 'martedì';
+            cell.value = mar ? 'MARTEDÌ' : 'VENERDÌ';
+            cell.font = font({ size: 9.5, bold: true, color: { argb: mar ? XL.mar : XL.ven } });
+            cell.fill = fill(mar ? XL.marBg : XL.venBg);
+          }
+          break;
+        case 'nota': cell.value = r.nota || ''; cell.font = font({ size: 10, italic: true, color: { argb: 'FF374151' } }); break;
+      }
     });
-    row.getCell(2).numFmt = '@';
-    row.getCell(7).numFmt = EURO; row.getCell(9).numFmt = EURO; row.getCell(8).numFmt = '#,##0';
-    row.height = 62;
+    row.height = 66;
     const b64 = imgs[r.ean];
     if (b64) {
       const id = wb.addImage({ base64: b64, extension: 'jpeg' });
-      ws.addImage(id, { tl: { col: 2.12, row: riga - 1 + 0.06 }, ext: { width: 57, height: 78 }, editAs: 'oneCell' });
+      ws.addImage(id, { tl: { col: colDi('cover') - 1 + 0.15, row: riga - 1 + 0.05 }, ext: { width: 58, height: 80 }, editAs: 'oneCell' });
     }
     riga++;
   };
   state.righe.forEach(r => scriviRiga(r, true));
+  ws.autoFilter = { from: { row: HEAD, column: 2 }, to: { row: riga - 1, column: COLS.length + 1 } };
+
   if (state.rifornimento.length) {
-    ws.mergeCells(`B${riga}:K${riga}`);
-    const s = ws.getCell(`B${riga}`);
-    s.value = 'NOVITÀ SBLOCCATE A RIFORNIMENTO';
-    s.font = { name: 'Calibri', size: 36, bold: true }; s.fill = fill('FFFFC000'); s.alignment = centro;
-    ws.getRow(riga).height = 48;
     riga++;
+    ws.mergeCells(riga, 2, riga, COLS.length + 1);
+    const s = ws.getCell(riga, 2);
+    s.value = 'NOVITÀ SBLOCCATE A RIFORNIMENTO';
+    s.font = font({ size: 11, bold: true, color: { argb: XL.rif } });
+    s.fill = fill(XL.rifBg);
+    s.alignment = { vertical: 'middle', indent: 1 };
+    s.border = { left: { style: 'thick', color: { argb: XL.rif } } };
+    ws.getRow(riga).height = 26;
+    riga++; z = 0;
     state.rifornimento.forEach(r => scriviRiga({ ...r, giorno: '' }, false));
   }
+
   const noteGen = $('noteGenerali').value.trim();
   if (noteGen) {
     riga++;
-    ws.getCell(`B${riga}`).value = 'NOTE'; ws.getCell(`B${riga}`).font = { bold: true, size: 12 };
-    ws.mergeCells(`C${riga}:K${riga}`);
-    const c = ws.getCell(`C${riga}`); c.value = noteGen; c.alignment = { wrapText: true, vertical: 'top' };
+    const lab = ws.getCell(riga, 2);
+    lab.value = 'NOTE'; lab.font = font({ size: 9, bold: true, color: { argb: XL.grigio } });
+    riga++;
+    ws.mergeCells(riga, 2, riga, COLS.length + 1);
+    const c = ws.getCell(riga, 2);
+    c.value = noteGen;
+    c.font = font({ size: 10.5 });
+    c.fill = fill(XL.tile);
+    c.alignment = { wrapText: true, vertical: 'top', indent: 1 };
+    c.border = { left: { style: 'thick', color: { argb: XL.blu } } };
     ws.getRow(riga).height = Math.min(400, 16 * (noteGen.split('\n').length + 1));
   }
+  riga += 2;
+  const pie = ws.getCell(riga, 2);
+  pie.value = `Generato con PDE Newsweek il ${fmtData(new Date())}`;
+  pie.font = font({ size: 8.5, italic: true, color: { argb: 'FF9CA3AF' } });
+
   const buffer = await wb.xlsx.writeBuffer();
   return { buffer, nomeFile };
 }
@@ -757,7 +879,7 @@ function creaEml({ to, cc = [], bcc = [], oggetto, corpoHtml, nomeAllegato, alle
 }
 function inoltraMail(tipo){
   return conBottoni(async () => {
-    const { buffer, nomeFile } = await costruisciExcel();
+    const { buffer, nomeFile } = await costruisciExcel(tipo);
     const l = state.lancio;
     const oggetto = `LANCIO ${String(l.numero).replace('.', ',')} - ${l.anno}`;
     const esterni = tipo === 'esterni';
